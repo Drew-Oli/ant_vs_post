@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+
+import multiprocessing
+
+# wild cards
+SAMPLES, = glob_wildcards('data/raw_reads/{sample}_r1.fq')
+
+# singularity containers
+cutadapt = 'docker://quay.io/biocontainers/cutadapt:2.5--py37h516909a_0'
+salmontools = 'local_containers/salmontools_23eac84.sif'
+salmon = 'docker://combinelab/salmon:1.2.1'
+transdecoder = 'docker://quay.io/biocontainers/transdecoder:5.5.0--pl526_2'
+emapper = 'docker://quay.io/biocontainers/eggnog-mapper:2.0.1--py_1'
+bioconductor = 'shub://TomHarrop/singularity-containers:bioconductor_3.9'
+
+# rules
+rule target:
+    input:
+        'output/05_deseq2/bter_deseq2_result_wannot.txt'
+
+rule deseq2:
+    input:
+        quant_files = expand('output/02_salmon/quant/{sample}/quant.sf', sample = SAMPLES),
+        gff = 'data/ref/GCF_000214255.1_Bter_1.0_genomic.gff',
+        samples_file = 'output/samples.txt',
+        salmon_quant_dir = 'output/02_salmon',
+        emapper_annotation_file = 'output/04_emapper/Bter_1.0.emapper.annotations'
+    output:
+        dds_file = 'output/05_deseq2/dds.Rds',
+        deseq2_result_file = 'output/05_deseq2/bter_deseq2_result.txt',
+        deseq2_result_with_annotation_file = 'output/05_deseq2/bter_deseq2_result_wannot.txt'
+    log:
+        'output/logs/05_deseq2/bter_deseq2.log'
+    threads:
+        multiprocessing.cpu_count()
+    singularity:
+        bioconductor
+    script:
+        'scripts/bter_deseq2.R'
+
+rule emapper:
+    input:
+        'output/03_transdecoder/GCF_000214255.1_Bter_1.0_rna.fna.transdecoder.pep'
+    output:
+        'output/04_emapper/Bter_1.0.emapper.annotations'
+    params:
+        database = 'data/ref/',
+        method = 'diamond',
+        filename = 'output/04_emapper/Bter_1.0'
+    log:
+        'output/logs/04_emapper/emapper.log'
+    threads:
+        multiprocessing.cpu_count()
+    singularity:
+        emapper
+    shell:
+        'emapper.py '
+        '-i {input} '
+        '--output {params.filename} '
+        '-m {params.method} '
+        '--data_dir {params.database} '
+        '&> {log}'
+
+rule TranDecoder:
+    input:
+        'data/ref/GCF_000214255.1_Bter_1.0_rna.fna'
+    output:
+        'output/03_transdecoder/GCF_000214255.1_Bter_1.0_rna.fna.transdecoder.pep'
+    params:
+        transcripts = 'GCF_000214255.1_Bter_1.0_rna.fna',
+        dir = 'output/03_transdecoder/',
+        cd = '../../'
+    log:
+        'output/logs/03_transdecoder/transdecoder.log'
+    threads:
+        multiprocessing.cpu_count()
+    singularity:
+        transdecoder
+    shell:
+        'cp {input} {params.dir} ; '
+        'cd {params.dir} || exit 1 ; '
+        'TransDecoder.LongOrfs -t {params.transcripts} ; '
+        'TransDecoder.Predict -t {params.transcripts} ; '
+        'rm -rf {params.transcripts} ; '
+        'cd {params.cd} ; '
+        '&> {log}'
+
+rule salmon quantification:
+    input:
+        r1 = 'output/01_cutadapt/trimmed_{sample}_r1.fq',
+        r2 = 'output/01_cutadapt/trimmed_{sample}_r2.fq',
+        index = 'output/02_salmon/index'
+    output:
+        'output/02_salmon/quant/{sample}/quant.sf'
+    params:
+        out_directory = 'output/02_salmon/quant/{sample}/'
+    log:
+        'output/logs/02_salmon/salmon_quant_{sample}.log'
+    threads:
+        multiprocessing.cpu_count()
+    singularity:
+        salmon
+    shell:
+        'salmon quant '
+        '--libType A '
+        '--index {input.index} '
+        '--mates1 {input.r1} '
+        '--mates2 {input.r2} '
+        '--output {params.out_directory} '
+        '--threads {threads} '
+        '--validateMappings '
+        '--gcBias '
+	'--seqBias '
+        '&> {log}'
+
+rule make salmon index:
+    input:
+        gentrome = 'output/02_salmon/ref/gentrome.fa',
+        decoys = 'output/02_salmon/ref/decoys.txt'
+    output:
+        directory('output/02_salmon/index')
+    log:
+        'output/logs/02_salmon/index/salmon_index.log'
+    threads:
+        multiprocessing.cpu_count()
+    singularity:
+        salmon
+    shell:
+        'salmon index '
+        '--transcripts {input.gentrome} '
+        '--index {output} '
+        '--threads {threads} '
+        '--decoys {input.decoys} '
+        '&> {log}'
+
+rule generateDecoyTrancriptome:
+    input:
+        genome = 'data/ref/GCF_000214255.1_Bter_1.0_genomic.fna',
+        transcriptome = 'data/ref/GCF_000214255.1_Bter_1.0_rna.fna',
+        annotation = 'data/ref/GCF_000214255.1_Bter_1.0_genomic.gff'
+    output:
+        'output/02_salmon/ref/gentrome.fa',
+        'output/02_salmon/ref/decoys.txt'
+    params:
+        outdir = 'output/02_salmon/ref'
+    log:
+        'output/logs/02_salmon/generateDecoyTrancriptome.log'
+    threads:
+        multiprocessing.cpu_count()
+    singularity:
+        salmontools
+    shell:
+        'generateDecoyTranscriptome.sh '
+        '-g {input.genome} '
+        '-t {input.transcriptome} '
+        '-a {input.annotation} '
+        '-o {params.outdir} '
+	'-m /usr/local/bin/mashmap '
+	'-b /usr/bin/bedtools '
+        '-j {threads} '
+        '&> {log}'
+
+rule Cutadapt:
+    input:
+        r1 = 'data/raw_reads/{sample}_r1.fq',
+        r2 = 'data/raw_reads/{sample}_r2.fq'
+    output:
+        r1 = 'output/01_cutadapt/trimmed_{sample}_r1.fq',
+        r2 = 'output/01_cutadapt/trimmed_{sample}_r2.fq'
+    log:
+        'output/logs/01_cutadapt/{sample}.log'
+    threads:
+        multiprocessing.cpu_count()
+    singularity:
+        cutadapt
+    shell:
+        'cutadapt '
+        '-a AGATCGGAAGAGCACACGTCTGAACTCCAGTCA '
+        '-A AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT '
+        '-o {output.r1} '
+        '-p {output.r2} '
+        '{input.r1} '
+        '{input.r2} '
+        '--minimum-length 1 '
+        '&> {log}'
