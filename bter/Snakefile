@@ -85,7 +85,7 @@ rule TranDecoder:
         'cd {params.cd} ; '
         '&> {log}'
 
-rule salmon quantification:
+rule SalmonQuant:
     input:
         r1 = 'output/01_cutadapt/trimmed_{sample}_r1.fq',
         r2 = 'output/01_cutadapt/trimmed_{sample}_r2.fq',
@@ -113,7 +113,7 @@ rule salmon quantification:
 	'--seqBias '
         '&> {log}'
 
-rule make salmon index:
+rule makeSalmonIndex:
     input:
         gentrome = 'output/02_salmon/ref/gentrome.fa',
         decoys = 'output/02_salmon/ref/decoys.txt'
