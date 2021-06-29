@@ -23,7 +23,7 @@ zcat /Volumes/archive/deardenlab/HTS_raw_sequencing_reads/NZGL02506qmp_flies\&an
 zcat /Volumes/archive/deardenlab/HTS_raw_sequencing_reads/NZGL02506qmp_flies\&ant_post/NZGL02506_fastq/Anterior_posterior/CBBUJANXX-2506-28-21-01_S127_L00*_R1_001.fastq.gz > $read_dir/bter_post3_r1.fq
 zcat /Volumes/archive/deardenlab/HTS_raw_sequencing_reads/NZGL02506qmp_flies\&ant_post/NZGL02506_fastq/Anterior_posterior/CBBUJANXX-2506-28-21-01_S127_L00*_R2_001.fastq.gz > $read_dir/bter_post3_r2.fq
 
-#get reference data#
+#make sample.txt#
 mkdir -p /Volumes/archive/deardenlab/drew_oliphant/projects/ant_v_post/bter/output/02_salmon
 output_dir=/Volumes/archive/deardenlab/drew_oliphant/projects/ant_v_post/bter/output
 echo "
